@@ -309,6 +309,68 @@ class AssertTypeSpecifyingExtension implements StaticMethodTypeSpecifyingExtensi
 						)
 					);
 				},
+				'isInstanceOfAny' => function (Scope $scope, Arg $expr, Arg $class): ?\PhpParser\Node\Expr {
+					$classType = $scope->getType($class->value);
+					if (!$classType instanceof ConstantArrayType) {
+						return null;
+					}
+
+					$constantStringTypes = $classType->getValueTypes();
+
+					// If array is empty, it's no assert at all
+					if (count($constantStringTypes) === 0) {
+						return null;
+					}
+
+					$orRight = array_pop($constantStringTypes);
+
+					if (!$orRight instanceof ConstantStringType) {
+						throw new \PHPStan\ShouldNotHappenException();
+					}
+
+					// If array has only one entry, it's the same as 'isInstanceOf'
+					if (count($constantStringTypes) === 0) {
+						return new \PhpParser\Node\Expr\Instanceof_(
+							$expr->value,
+							new \PhpParser\Node\Name($orRight->getValue())
+						);
+					}
+
+					$orLeft = array_pop($constantStringTypes);
+
+					if (!$orLeft instanceof ConstantStringType) {
+						throw new \PHPStan\ShouldNotHappenException();
+					}
+
+					$or = new \PhpParser\Node\Expr\BinaryOp\BooleanOr(
+						new \PhpParser\Node\Expr\Instanceof_(
+							$expr->value,
+							new \PhpParser\Node\Name($orLeft->getValue())
+						),
+						new \PhpParser\Node\Expr\Instanceof_(
+							$expr->value,
+							new \PhpParser\Node\Name($orRight->getValue())
+						)
+					);
+
+					while (count($constantStringTypes) > 0) {
+						$orLeft = array_pop($constantStringTypes);
+
+						if (!$orLeft instanceof ConstantStringType) {
+							throw new \PHPStan\ShouldNotHappenException();
+						}
+
+						$or = new \PhpParser\Node\Expr\BinaryOp\BooleanOr(
+							new \PhpParser\Node\Expr\Instanceof_(
+								$expr->value,
+								new \PhpParser\Node\Name($orLeft->getValue())
+							),
+							$or
+						);
+					}
+
+					return $or;
+				},
 				'implementsInterface' => function (Scope $scope, Arg $expr, Arg $class): ?\PhpParser\Node\Expr {
 					$classType = $scope->getType($class->value);
 					if (!$classType instanceof ConstantStringType) {
